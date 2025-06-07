@@ -1,13 +1,13 @@
-expname: 4column250503_nerf9
+expname: 4column250528_test3_14
 data:
-  datadir: [data/long/RS307, data/long/RS330]
-  far: 4.5
-  fov: 25
-  imsize: 128  
-  near: 1.5
+  datadir: [data/RS307_n, data/RS330_n]
+  far: 4.0
+  fov: 20
+  imsize: 256  
+  near: 1.0
   orthographic: False
   use_default_rays : False
-  radius: 3.
+  radius: 2.5
   type: RS307_0_i2
   umax: 1.
   umin: 0.
@@ -48,7 +48,7 @@ training:
   lr_anneal: 0.5
   lr_anneal_every: 50000,100000,200000
   lr_d: 0.0001
-  lr_g: 0.0005
+  lr_g: 0.0004
   model_average_beta: 0.999
   model_average_reinit: false
   model_file: model.pt
