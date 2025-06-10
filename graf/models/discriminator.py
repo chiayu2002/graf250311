@@ -17,17 +17,17 @@ class Discriminator(nn.Module):
         blocks = []
         if self.imsize==128:
             blocks += [
-                # input is (nc) x 128 x 128
-                SN(nn.Conv2d(nc, ndf//2, 4, 2, 1, bias=False)),
+               # input is (nc) x 128 x 128
+                nn.Conv2d(nc+self.num_classes, ndf//2, 4, 2, 1, bias=False),
+                nn.BatchNorm2d(ndf//2),
                 nn.LeakyReLU(0.2, inplace=True),
-                # input is (ndf//2) x 64 x 64
-                SN(nn.Conv2d(ndf//2, ndf, 4, 2, 1, bias=False)),
-                IN(ndf),
+                # state size. (ndf//2) x 64 x 64
+                nn.Conv2d(ndf//2, ndf, 4, 2, 1, bias=False),
+                nn.BatchNorm2d(ndf),
                 nn.LeakyReLU(0.2, inplace=True),
                 # state size. (ndf) x 32 x 32
-                SN(nn.Conv2d(ndf, ndf * 2, 4, 2, 1, bias=False)),
-                #nn.BatchNorm2d(ndf * 2),
-                IN(ndf * 2),
+                nn.Conv2d(ndf, ndf * 2, 4, 2, 1, bias=False),
+                nn.BatchNorm2d(ndf * 2),
                 nn.LeakyReLU(0.2, inplace=True),
             ]
         elif self.imsize==64:
@@ -39,6 +39,25 @@ class Discriminator(nn.Module):
                 SN(nn.Conv2d(ndf, ndf * 2, 4, 2, 1, bias=False)),
                 #nn.BatchNorm2d(ndf * 2),
                 IN(ndf * 2),
+                nn.LeakyReLU(0.2, inplace=True),
+            ]
+        elif self.imsize==256:
+            blocks += [
+                # input is (nc) x 256 x 256
+                nn.Conv2d(nc+self.num_classes, ndf//4, 4, 2, 1, bias=False),
+                nn.BatchNorm2d(ndf//4),
+                nn.LeakyReLU(0.2, inplace=True),
+                # state size. (ndf//4) x 128 x 128
+                nn.Conv2d(ndf//4, ndf//2, 4, 2, 1, bias=False),
+                nn.BatchNorm2d(ndf//2),
+                nn.LeakyReLU(0.2, inplace=True),
+                # state size. (ndf//2) x 64 x 64
+                nn.Conv2d(ndf//2, ndf, 4, 2, 1, bias=False),
+                nn.BatchNorm2d(ndf),
+                nn.LeakyReLU(0.2, inplace=True),
+                # state size. (ndf) x 32 x 32
+                nn.Conv2d(ndf, ndf * 2, 4, 2, 1, bias=False),
+                nn.BatchNorm2d(ndf * 2),
                 nn.LeakyReLU(0.2, inplace=True),
             ]
         else:
@@ -85,8 +104,9 @@ class Discriminator(nn.Module):
         )
 
     def forward(self, input, label, return_features=False):
-        input = input[:, :self.nc]
-        input = input.view(-1, self.imsize, self.imsize, self.nc).permute(0, 3, 1, 2)  # (BxN_samples)xC -> BxCxHxW
+        # input = input[:, :self.nc]
+        # input = input.view(-1, self.imsize, self.imsize, self.nc).permute(0, 3, 1, 2)  # (BxN_samples)xC -> BxCxHxW
+        input = input.reshape(-1, self.imsize, self.imsize, self.nc).permute(0, 3, 1, 2)
 
         first_label = label[:,0]
         first_label = first_label.long().to(input.device)

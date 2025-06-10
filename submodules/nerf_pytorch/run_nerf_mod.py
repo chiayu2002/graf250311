@@ -29,7 +29,31 @@ def batchify(fn, chunk):
         label_oftype = label[:,0]
         return torch.cat([fn(inputs[i:i+chunk], label_oftype) for i in range(0, inputs.shape[0], chunk)], 0)
     return ret
-
+# def batchify(fn, fn_rgb, chunk):
+#     if chunk is None:
+#         return fn
+#     def ret(inputs, label):
+#         label_oftype = label[:,0]
+#         batches = torch.split(inputs, chunk)
+#         results = [fn(batch, label_oftype) for batch in batches]
+#         results_all = torch.cat(results, 0)
+#         rgb_features = results_all[:, :128]
+#         sigma = results_all[:, -1:]
+#         all_outputs = []
+#         for i in range(0, rgb_features.shape[0], chunk):
+#             # 獲取當前批次
+#             batch_inputs = rgb_features[i:i+chunk]
+#             # 處理當前批次
+#             with torch.cuda.amp.autocast():
+#                 batch_outputs = fn_rgb(batch_inputs)
+#             # 保存結果
+#             all_outputs.append(batch_outputs)
+#             torch.cuda.empty_cache()
+#         rgb = torch.cat(all_outputs, dim=0)
+#         # rgb = fn_rgb(rgb_features)
+#         return torch.cat([rgb, sigma], dim=1)
+#         # return torch.cat([fn(inputs[i:i+chunk], label_oftype) for i in range(0, inputs.shape[0], chunk)], 0)
+#     return ret
 
 def run_network(inputs, viewdirs, fn, label, embed_fn, embeddirs_fn, features=None, netchunk=1024*64):   #輸出rgb and sigma
     inputs_flat = torch.reshape(inputs, [-1, inputs.shape[-1]]) #524288 3
@@ -56,7 +80,12 @@ def run_network(inputs, viewdirs, fn, label, embed_fn, embeddirs_fn, features=No
         #     embedded = torch.cat([embedded, features_appearance], dim=-1)
 
     outputs_flat = batchify(fn, netchunk)(embedded, label)
+    # outputs_flat = batchify(fn, fn_rgb, netchunk)(embedded, label)
+    # w = list(inputs.shape[:-1])
+    # e = [outputs_flat.shape[-1]]
     outputs = torch.reshape(outputs_flat, list(inputs.shape[:-1]) + [outputs_flat.shape[-1]])  #8192 64 4
+    # output_shape = list(inputs[:-1]) + [outputs_flat.shape[-1]]
+    # outputs = outputs_flat.view(output_shape)
     return outputs
 
 
@@ -133,6 +162,8 @@ def render(H, W, focal, label, chunk=1024*32, rays=None, c2w=None, ndc=True,
     return ret_list + [ret_dict]
 
 def create_nerf(args):
+
+    from graf.models.neural_renderer import NeuralRenderer
     embed_fn, input_ch = get_embedder(args.multires, args.i_embed)
 
     input_ch += args.feat_dim
@@ -150,6 +181,11 @@ def create_nerf(args):
     grad_vars = list(model.parameters())
     named_params = list(model.named_parameters())
 
+    # neural_render = NeuralRenderer(input_dim=128, output_dim=3, img_size=256, final_actvn=False)
+    
+    # grad_vars = list(model.parameters()) + list(neural_render.parameters())
+    # named_params = list(model.named_parameters()) +  list(neural_render.named_parameters())
+
     model_fine = None
     if args.N_importance > 0:
         model_fine = NeRF(D=args.netdepth_fine, W=args.netwidth_fine,
@@ -166,6 +202,16 @@ def create_nerf(args):
                                                                                 #   feat_dim_appearance=args.
                                                                                 #   feat_dim_appearance
                                                                                   )
+    
+    # network_query_fn = lambda inputs, viewdirs, network_fn, network_fn_rgb, label, features: run_network(inputs, viewdirs, network_fn, network_fn_rgb, 
+    #                                                                                     label,
+    #                                                                                     features=features,
+    #                                                                                     embed_fn=embed_fn,
+    #                                                                                     embeddirs_fn=embeddirs_fn,
+    #                                                                                     netchunk=args.netchunk,
+    #                                                                                     #   feat_dim_appearance=args.
+    #                                                                                     #   feat_dim_appearance
+    #                                                                                     )
 
     render_kwargs_train = {             
         'network_query_fn' : network_query_fn,
@@ -174,6 +220,7 @@ def create_nerf(args):
         'network_fine' : model_fine,
         'N_samples' : args.N_samples,
         'network_fn' : model,
+        # 'network_fn_rgb' : neural_render,
         'use_viewdirs' : args.use_viewdirs,
         'raw_noise_std' : args.raw_noise_std,
         'ndc': False,
@@ -197,18 +244,18 @@ def raw2outputs(raw, z_vals, rays_d, raw_noise_std=0, pytest=False):
 
     dists = dists * torch.norm(rays_d[...,None,:], dim=-1)
 
-    rgb = torch.sigmoid(raw[...,:3])  # [N_rays, N_samples, 3]
+    rgb = torch.sigmoid(raw[...,:128])  # [N_rays, N_samples, 3]
     noise = 0.
     if raw_noise_std > 0.:
-        noise = torch.randn(raw[...,3].shape) * raw_noise_std
+        noise = torch.randn(raw[...,128].shape) * raw_noise_std
 
         # Overwrite randomly sampled data if pytest
         if pytest:
             np.random.seed(0)
-            noise = np.random.rand(*list(raw[...,3].shape)) * raw_noise_std
+            noise = np.random.rand(*list(raw[...,128].shape)) * raw_noise_std
             noise = torch.Tensor(noise)
 
-    alpha = raw2alpha(raw[...,3] + noise, dists)  # [N_rays, N_samples]
+    alpha = raw2alpha(raw[...,128] + noise, dists)  # [N_rays, N_samples]
     # weights = alpha * tf.math.cumprod(1.-alpha + 1e-10, -1, exclusive=True)
     weights = alpha * torch.cumprod(torch.cat([torch.ones((alpha.shape[0], 1)), 1.-alpha + 1e-10], -1), -1)[:, :-1]
     rgb_map = torch.sum(weights[...,None] * rgb, -2)  # [N_rays, 3]
@@ -224,6 +271,7 @@ def render_rays(ray_batch,
                 label,
                 network_fn,
                 network_query_fn,
+                # network_fn_rgb,
                 N_samples,
                 features=None,
                 retraw=False,
@@ -269,6 +317,7 @@ def render_rays(ray_batch,
 
 #     raw = run_network(pts)
     raw = network_query_fn(pts, viewdirs, network_fn, label, features)
+    # raw = network_query_fn(pts, viewdirs, network_fn, network_fn_rgb, label, features)
     rgb_map, disp_map, acc_map, weights, depth_map = raw2outputs(raw, z_vals, rays_d, raw_noise_std, pytest=pytest)
 
 #     if N_importance > 0:

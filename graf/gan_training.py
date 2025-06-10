@@ -58,7 +58,7 @@ class Evaluator(EvaluatorBase):
             )
 
     def get_rays(self, pose):
-        return self.generator.val_ray_sampler(self.generator.H, self.generator.W,
+        return self.generator.val_ray_sampler(32, 32,
                                               self.generator.focal, pose)[0]
 
     def create_samples(self, z, label, poses=None):
@@ -81,8 +81,8 @@ class Evaluator(EvaluatorBase):
                     rays_i = rays_i.permute(1, 0, 2, 3).flatten(1, 2)       # Bx2x(HxW)xC -> 2x(BxHxW)x3
                 rgb_i, disp_i, acc_i, _ = self.generator(z_i, label, rays=rays_i)
 
-                reshape = lambda x: x.view(bs, self.generator.H, self.generator.W, x.shape[1]).permute(0, 3, 1, 2)  # (NxHxW)xC -> NxCxHxW
-                rgb.append(reshape(rgb_i).cpu())
+                reshape = lambda x: x.view(bs, 32, 32, x.shape[1]).permute(0, 3, 1, 2)  # (NxHxW)xC -> NxCxHxW
+                rgb.append(rgb_i)  #rgb.append(reshape(rgb_i).cpu())
                 disp.append(reshape(disp_i).cpu())
                 acc.append(reshape(acc_i).cpu())
 

@@ -22,7 +22,10 @@ from graf.models.vit_model import ViewConsistencyTransformer
  
 from GAN_stability.gan_training.checkpoints_mod import CheckpointIO
 
-# os.environ['CUDA_VISIBLE_DEVICES'] = '3'
+from torch.cuda.amp import autocast, GradScaler
+
+
+# os.environ['CUDA_VISIBLE_DEVICES'] = '4'
 
 def setup_directories(config):
     out_dir = os.path.join(config['training']['outdir'], config['expname'])
@@ -69,6 +72,10 @@ def set_random_seed(seed):
     torch.backends.cudnn.deterministic = True  # 確定性算法
     torch.backends.cudnn.benchmark = False  # 關閉自動優化
 
+def clear_memory():
+    """清理記憶體的輔助函數"""
+    torch.cuda.empty_cache()
+
 def main():
     set_random_seed(0)
     parser = argparse.ArgumentParser()
@@ -89,8 +96,8 @@ def main():
     
     # 初始化 wandb
     wandb.init(
-        project="graf250428",
-        entity="vicky20020808",
+        project="graf250520",
+        # entity="qaz20020219",
         name="RS307 330",
         config=config
     )
@@ -158,6 +165,9 @@ def main():
         for x_real, label in tqdm(train_loader, desc=f"Epoch {epoch_idx}"):
             it += 1
 
+            if it % 50 == 0:
+                clear_memory()
+
             mce_loss = MCE_Loss()
             first_label = label[:,0]
             first_label = first_label.long()
@@ -177,13 +187,14 @@ def main():
             d_optimizer.zero_grad()
 
             x_real = x_real.to(device)
-            rgbs = img_to_patch(x_real)
-            rgbs.requires_grad_(True)
+            # rgbs = img_to_patch(x_real)
+            # rgbs.requires_grad_(True)
+            x_real.requires_grad_(True)
 
             z = zdist.sample((batch_size,))
             
             #real data
-            d_real, label_real = discriminator(rgbs, label)
+            d_real, label_real = discriminator(x_real, label)
             # output1 = discriminator(rgbs, label)
             # d_real = dhead(output1)
             dloss_real = compute_loss(d_real, 1)
@@ -191,12 +202,12 @@ def main():
             d_label_loss = mce_loss([2], label_real, one_hot)
             # dloss_real.backward()
             # dloss_real.backward(retain_graph=True)
-            reg = 10. * compute_grad2(d_real, rgbs).mean()
+            reg = 10. * compute_grad2(d_real, x_real).mean()
             # reg.backward()
             
             #fake data
             with torch.no_grad():
-                x_fake, _ = generator(z, label)
+                x_fake = generator(z, label)
             x_fake.requires_grad_()
 
             d_fake, _ = discriminator(x_fake, label)
@@ -226,7 +237,7 @@ def main():
             g_optimizer.zero_grad()
 
             z = zdist.sample((batch_size,))
-            x_fake, _= generator(z, label)
+            x_fake= generator(z, label)
             d_fake, label_fake = discriminator(x_fake, label)
             # output = discriminator(x_fake, label)
             # d_fake = dhead(output)
@@ -240,6 +251,24 @@ def main():
             gloss_all.backward()
             # gloss.backward()
             g_optimizer.step()
+
+            # scaler = GradScaler()
+            # with autocast():
+            #     z = zdist.sample((batch_size,))
+            #     x_fake, _= generator(z, label)
+            #     d_fake, label_fake = discriminator(x_fake, label)
+            #     # output = discriminator(x_fake, label)
+            #     # d_fake = dhead(output)
+            #     g_label_loss = mce_loss([2], label_fake, one_hot)
+
+            #     gloss = compute_loss(d_fake, 1) 
+            #     # label_fake = qhead(output)
+            #     # label_loss = mce_loss([2], label_fake, one_hot.to(device))
+            #     gloss_all = gloss + g_label_loss
+
+            # scaler.scale(gloss_all).backward()
+            # scaler.step(g_optimizer)
+            # scaler.update()
                 
             # wandb
             if (it + 1) % config['training']['print_every'] == 0:
