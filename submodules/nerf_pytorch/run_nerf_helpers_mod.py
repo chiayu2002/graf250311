@@ -106,14 +106,25 @@ class NeRF(nn.Module):
         else:
             self.output_linear = nn.Linear(W, output_ch)
 
+        self._initialize_weights()
+
+    def _initialize_weights(self):
+        """使用 Xavier 初始化提升訓練穩定性"""
+        for m in self.modules():
+            if isinstance(m, nn.Linear):
+                nn.init.xavier_uniform_(m.weight)
+                if m.bias is not None:
+                    nn.init.constant_(m.bias, 0)
+
     def forward(self, x, label):
         input_pts, input_views = torch.split(x, [self.input_ch, self.input_ch_views], dim=-1) #torch.Size([65536, 319]),torch.Size([65536, 27])
         h = input_pts
 
         label = label.long().to(input_pts.device)
         label_embedding = self.condition_embedding(label)
-        repeat_times = h.shape[0] // label_embedding.shape[0]
-        label_embedding = label_embedding.repeat(repeat_times, 1)
+        repeat_times = input_pts.shape[0] // label_embedding.shape[0]
+        if repeat_times > 1:
+            label_embedding = label_embedding.repeat_interleave(repeat_times, dim=0)
 
         input_o, input_shape = torch.split(input_pts, [63, 256], dim=-1)
         conditioned_shape = input_shape * label_embedding
@@ -140,7 +151,7 @@ class NeRF(nn.Module):
                 h = relu(h)
 
             rgb = self.rgb_linear(h)
-            outputs = torch.cat([rgb, alpha], -1)
+            outputs = torch.cat([h, alpha], -1)
         else:
             outputs = self.output_linear(h)
 

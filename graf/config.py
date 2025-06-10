@@ -66,6 +66,7 @@ def build_models(config, disc=True):
     from submodules.nerf_pytorch.run_nerf_mod import create_nerf
     from .models.generator import Generator
     from .models.discriminator import Discriminator #, QHead, DHead
+    from .models.neural_renderer import NeuralRenderer, SimpleConvTRenderer
 
     config_nerf = Namespace(**config['nerf'])
     # Update config for NERF
@@ -77,9 +78,17 @@ def build_models(config, disc=True):
 
     render_kwargs_train, render_kwargs_test, params, named_parameters = create_nerf(config_nerf)
 
+    # neural_render = NeuralRenderer(input_dim=128, output_dim=3, img_size=256, final_actvn=False)
+    neural_render = SimpleConvTRenderer(input_dim=128, img_size=256, input_size=32)
+    
+    grad_vars = params + list(neural_render.parameters())
+    named_params = named_parameters +  list(neural_render.named_parameters())
+
     bds_dict = {'near': config['data']['near'], 'far': config['data']['far']}
     render_kwargs_train.update(bds_dict)
     render_kwargs_test.update(bds_dict)
+
+    render_neural = {'neural_render': neural_render}
 
     ray_sampler = FlexGridRaySampler(N_samples=config['ray_sampler']['N_samples'],
                                      min_scale=config['ray_sampler']['min_scale'],
@@ -94,8 +103,9 @@ def build_models(config, disc=True):
 
     generator = Generator(H, W, f, r,
                           ray_sampler=ray_sampler,
+                          render_neural = render_neural,
                           render_kwargs_train=render_kwargs_train, render_kwargs_test=render_kwargs_test,
-                          parameters=params, named_parameters=named_parameters,
+                          parameters=grad_vars, named_parameters=named_params,
                           chunk=config_nerf.chunk,
                           range_u=(float(config['data']['umin']), float(config['data']['umax'])),
                           range_v=(float(config['data']['vmin']), float(config['data']['vmax'])),
@@ -108,7 +118,7 @@ def build_models(config, disc=True):
     if disc:
         disc_kwargs = {'nc': 3,       # channels for patch discriminator
                        'ndf': config['discriminator']['ndf'],
-                       'imsize': int(np.sqrt(config['ray_sampler']['N_samples'])),  #int(np.sqrt(config['ray_sampler']['N_samples'])),
+                       'imsize': int(256),  #int(np.sqrt(config['ray_sampler']['N_samples'])),
                        'hflip': config['discriminator']['hflip'],
                        'num_classes':config['discriminator']['num_classes']
                         }

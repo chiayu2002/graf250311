@@ -12,7 +12,7 @@ import pickle
 
 
 class Generator(object):
-    def __init__(self, H, W, focal, radius, ray_sampler, render_kwargs_train, render_kwargs_test, parameters, named_parameters,
+    def __init__(self, H, W, focal, radius, ray_sampler, render_neural, render_kwargs_train, render_kwargs_test, parameters, named_parameters,
                  range_u=(0,1), range_v=(0.01,0.49),v=0, chunk=None, device='cuda', orthographic=False, use_default_rays=False, reference_images=None, initial_direction=None, use_vit=True):
         self.device = device
         self.H = int(H)
@@ -35,7 +35,9 @@ class Generator(object):
         self.initial_raw_noise_std = self.render_kwargs_train['raw_noise_std']
         self._parameters = parameters
         self._named_parameters = named_parameters
-        self.module_dict = {'generator': self.render_kwargs_train['network_fn']}
+        self.render_neural = render_neural
+        # self.module_dict = {'generator': self.render_kwargs_train['network_fn']}
+        self.module_dict = {'generator': self.render_kwargs_train['network_fn'], 'neural_render':self.render_neural['neural_render']}
         
         for k, v in self.module_dict.items():
             if k in ['generator']:
@@ -80,15 +82,25 @@ class Generator(object):
         rgb, disp, acc, extras = render(self.H, self.W, self.focal, label, chunk=self.chunk, rays=rays,
                                         **render_kwargs)
 
+        if isinstance(self.render_neural, dict):
+            neural_renderer = self.render_neural.get('neural_render', self.render_neural.get('render_neural', None))
+        else:
+            neural_renderer = self.render_neural
+        
+        if neural_renderer is not None:
+            rgb_reshaped = rgb.view(8, 32, 32, 128).permute(0, 3, 1, 2)
+            rgb_upsampled = neural_renderer(rgb_reshaped)
+            # rgb = rgb_upsampled.permute(0, 2, 3, 1).view(8, -1, 3)
+
         rays_to_output = lambda x: x.view(len(x), -1) * 2 - 1      # (BxN_samples)xC
     
         if self.use_test_kwargs:               # return all outputs
-            return rays_to_output(rgb), \
+            return rgb_upsampled, \
                    rays_to_output(disp), \
                    rays_to_output(acc), extras
-
-        rgb = rays_to_output(rgb)
-        return rgb, rays
+         #rays_to_output(rgb)
+        # rgb = rays_to_output(rgb)
+        return rgb_upsampled
 
     def decrease_nerf_noise(self, it):
         end_it = 5000

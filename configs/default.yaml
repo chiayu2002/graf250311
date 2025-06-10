@@ -1,13 +1,13 @@
-expname: 4column250503_nerf9
+expname: 4column250610_SimpleConvTRenderer
 data:
-  datadir: [data/long/RS307, data/long/RS330]
-  far: 4.5
-  fov: 25
-  imsize: 128  
-  near: 1.5
+  datadir: [data/RS307_n, data/RS330_n]
+  far: 4.0
+  fov: 20
+  imsize: 256  
+  near: 1.0
   orthographic: False
   use_default_rays : False
-  radius: 3.
+  radius: 2.5
   type: RS307_0_i2
   umax: 1.
   umin: 0.
