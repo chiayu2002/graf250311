@@ -144,9 +144,65 @@ def create_nerf(args):
     # input_ch_views += args.feat_dim_appearance
     output_ch = 5 if args.N_importance > 0 else 4
     skips = [4]
-    model = NeRF(D=args.netdepth, W=args.netwidth,
-                 input_ch=input_ch, output_ch=output_ch, skips=skips,
-                 input_ch_views=input_ch_views, use_viewdirs=args.use_viewdirs, numclasses=args.num_class)
+
+    # 支持選擇不同的模型架構
+    model_version = getattr(args, 'model_version', 'original')
+
+    if model_version == 'v1':
+        # 方案 1: 更深更寬 + 更多 skip connections
+        from .run_nerf_helpers_improved import ImprovedNeRF_v1
+        model = ImprovedNeRF_v1(
+            D=args.netdepth, W=args.netwidth,
+            input_ch=input_ch, output_ch=output_ch,
+            skips=[4, 8] if args.netdepth >= 10 else [4],
+            input_ch_views=input_ch_views,
+            use_viewdirs=args.use_viewdirs,
+            numclasses=args.num_class
+        )
+        print(f"使用改進架構 v1: D={args.netdepth}, W={args.netwidth}, skips=[4,8]")
+    elif model_version == 'v2':
+        # 方案 2: Swish + LayerNorm
+        from .run_nerf_helpers_improved import ImprovedNeRF_v2
+        model = ImprovedNeRF_v2(
+            D=args.netdepth, W=args.netwidth,
+            input_ch=input_ch, output_ch=output_ch,
+            skips=[4, 7] if args.netdepth >= 9 else [4],
+            input_ch_views=input_ch_views,
+            use_viewdirs=args.use_viewdirs,
+            numclasses=args.num_class
+        )
+        print(f"使用改進架構 v2 (Swish+LayerNorm): D={args.netdepth}, W={args.netwidth}")
+    elif model_version == 'v3':
+        # 方案 3: Residual Connections
+        from .run_nerf_helpers_improved import ImprovedNeRF_v3
+        model = ImprovedNeRF_v3(
+            D=args.netdepth, W=args.netwidth,
+            input_ch=input_ch, output_ch=output_ch,
+            skips=[4, 7] if args.netdepth >= 9 else [4],
+            input_ch_views=input_ch_views,
+            use_viewdirs=args.use_viewdirs,
+            numclasses=args.num_class
+        )
+        print(f"使用改進架構 v3 (Residual): D={args.netdepth}, W={args.netwidth}")
+    elif model_version == 'v4':
+        # 方案 4: 多尺度特徵融合
+        from .run_nerf_helpers_improved import ImprovedNeRF_v4_MultiScale
+        model = ImprovedNeRF_v4_MultiScale(
+            D=args.netdepth, W=args.netwidth,
+            input_ch=input_ch, output_ch=output_ch,
+            skips=[4, 7] if args.netdepth >= 9 else [4],
+            input_ch_views=input_ch_views,
+            use_viewdirs=args.use_viewdirs,
+            numclasses=args.num_class
+        )
+        print(f"使用改進架構 v4 (MultiScale): D={args.netdepth}, W={args.netwidth}")
+    else:
+        # 使用原始 NeRF 架構
+        model = NeRF(D=args.netdepth, W=args.netwidth,
+                     input_ch=input_ch, output_ch=output_ch, skips=skips,
+                     input_ch_views=input_ch_views, use_viewdirs=args.use_viewdirs, numclasses=args.num_class)
+        print(f"使用原始架構: D={args.netdepth}, W={args.netwidth}")
+
     grad_vars = list(model.parameters())
     named_params = list(model.named_parameters())
 
