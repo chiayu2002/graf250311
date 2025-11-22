@@ -8,6 +8,7 @@ import torch.optim as optim
 from tqdm import tqdm
 import torch
 torch.set_default_tensor_type('torch.cuda.FloatTensor')
+from torch.cuda.amp import autocast, GradScaler
 import wandb
 import pprint
 import sys
@@ -66,8 +67,9 @@ def set_random_seed(seed):
     torch.cuda.manual_seed_all(seed)  # 如果使用多 GPU
     np.random.seed(seed)
     random.seed(seed)
-    torch.backends.cudnn.deterministic = True  # 確定性算法
-    torch.backends.cudnn.benchmark = False  # 關閉自動優化
+    # 啟用cudnn自動調優以加速訓練（會犧牲一些結果可重現性）
+    torch.backends.cudnn.benchmark = True
+    torch.backends.cudnn.deterministic = False
 
 def main():
     set_random_seed(0)
@@ -126,10 +128,15 @@ def main():
     d_params = discriminator.parameters()
     # g_params = list(generator.parameters()) + list(qhead.parameters())
     # d_params = list(discriminator.parameters()) + list(dhead.parameters())
-    g_optimizer = optim.RMSprop(g_params, lr=lr_g, alpha=0.99, eps=1e-8)
-    d_optimizer = optim.RMSprop(d_params, lr=lr_d, alpha=0.99, eps=1e-8)
-    # g_optimizer = optim.Adam(g_params, lr=lr_g, betas=(0.5, 0.999), eps=1e-8)
-    # d_optimizer = optim.Adam(d_params, lr=lr_d, betas=(0.5, 0.999), eps=1e-8)
+    # g_optimizer = optim.RMSprop(g_params, lr=lr_g, alpha=0.99, eps=1e-8)
+    # d_optimizer = optim.RMSprop(d_params, lr=lr_d, alpha=0.99, eps=1e-8)
+    # 使用Adam優化器（通常比RMSprop更快）
+    g_optimizer = optim.Adam(g_params, lr=lr_g, betas=(0.5, 0.999), eps=1e-8)
+    d_optimizer = optim.Adam(d_params, lr=lr_d, betas=(0.5, 0.999), eps=1e-8)
+
+    # 初始化混合精度訓練的GradScaler（可加速2-3倍）
+    scaler_d = GradScaler()
+    scaler_g = GradScaler()
 
     #get patch
     hwfr = config['data']['hwfr']
@@ -177,41 +184,40 @@ def main():
             d_optimizer.zero_grad()
 
             x_real = x_real.to(device)
-            rgbs = img_to_patch(x_real)
-            rgbs.requires_grad_(True)
 
-            z = zdist.sample((batch_size,))
-            
-            #real data
-            d_real, label_real = discriminator(rgbs, label)
-            # output1 = discriminator(rgbs, label)
-            # d_real = dhead(output1)
-            dloss_real = compute_loss(d_real, 1)
-            one_hot = one_hot.to(label_real.device)
-            d_label_loss = mce_loss([2], label_real, one_hot)
-            # dloss_real.backward()
-            # dloss_real.backward(retain_graph=True)
+            # 使用混合精度訓練
+            with autocast():
+                rgbs = img_to_patch(x_real)
+                rgbs = rgbs.float()  # 確保與autocast兼容
+                rgbs.requires_grad_(True)
+
+                z = zdist.sample((batch_size,))
+
+                #real data
+                d_real, label_real = discriminator(rgbs, label)
+                dloss_real = compute_loss(d_real, 1)
+                one_hot = one_hot.to(label_real.device)
+                d_label_loss = mce_loss([2], label_real, one_hot)
+
+                # gradient penalty需要在autocast外計算
             reg = 10. * compute_grad2(d_real, rgbs).mean()
-            # reg.backward()
-            
-            #fake data
-            with torch.no_grad():
-                x_fake, _ = generator(z, label)
-            x_fake.requires_grad_()
 
-            d_fake, _ = discriminator(x_fake, label)
-            # output2 = discriminator(x_fake, label)
-            # d_fake = dhead(output2)
-            dloss_fake = compute_loss(d_fake, 0)
-            # dloss_fake.backward()
-            # reg = 10. * wgan_gp_reg(discriminator, rgbs, x_fake, label)
-            # reg.backward()
+            with autocast():
+                #fake data
+                with torch.no_grad():
+                    x_fake, _ = generator(z, label)
+                x_fake = x_fake.float()
+                x_fake.requires_grad_()
 
-            # dloss = dloss_real + dloss_fake
-            total_d_loss = dloss_real + dloss_fake + d_label_loss + reg
-            # dloss_all = dloss_real + dloss_fake +reg
-            total_d_loss.backward()
-            d_optimizer.step()
+                d_fake, _ = discriminator(x_fake, label)
+                dloss_fake = compute_loss(d_fake, 0)
+
+                total_d_loss = dloss_real + dloss_fake + d_label_loss + reg
+
+            # 使用scaler進行反向傳播
+            scaler_d.scale(total_d_loss).backward()
+            scaler_d.step(d_optimizer)
+            scaler_d.update()
 
             # Generators updates
             if config['nerf']['decrease_noise']:
@@ -225,21 +231,20 @@ def main():
             # dhead.train()
             g_optimizer.zero_grad()
 
-            z = zdist.sample((batch_size,))
-            x_fake, _= generator(z, label)
-            d_fake, label_fake = discriminator(x_fake, label)
-            # output = discriminator(x_fake, label)
-            # d_fake = dhead(output)
-            g_label_loss = mce_loss([2], label_fake, one_hot)
+            # 使用混合精度訓練
+            with autocast():
+                z = zdist.sample((batch_size,))
+                x_fake, _= generator(z, label)
+                d_fake, label_fake = discriminator(x_fake, label)
+                g_label_loss = mce_loss([2], label_fake, one_hot)
 
-            gloss = compute_loss(d_fake, 1) 
-            # label_fake = qhead(output)
-            # label_loss = mce_loss([2], label_fake, one_hot.to(device))
-            gloss_all = gloss + g_label_loss
+                gloss = compute_loss(d_fake, 1)
+                gloss_all = gloss + g_label_loss
 
-            gloss_all.backward()
-            # gloss.backward()
-            g_optimizer.step()
+            # 使用scaler進行反向傳播
+            scaler_g.scale(gloss_all).backward()
+            scaler_g.step(g_optimizer)
+            scaler_g.update()
                 
             # wandb
             if (it + 1) % config['training']['print_every'] == 0:

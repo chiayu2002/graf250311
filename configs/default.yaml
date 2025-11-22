@@ -40,7 +40,7 @@ ray_sampler:
   scale_anneal: 0.0025
 training:
   backup_every: 50000
-  batch_size: 8
+  batch_size: 16  # 提高batch size以增加GPU利用率（若顯存不足可降回12）
   chunk: 32768 #131072
   equalize_lr: false
   fid_every: 5000
@@ -53,15 +53,15 @@ training:
   model_average_reinit: false
   model_file: model.pt
   netchunk: 65536 #262144
-  nworkers: 0
-  optimizer: rmsprop
+  nworkers: 4  # 使用多個worker並行載入資料，大幅加速資料處理
+  optimizer: adam  # Adam通常比RMSprop更快且更穩定
   outdir: ./results
   print_every: 10
   reg_param: 10.0
   restart_every: -1
-  sample_every: 500
+  sample_every: 1000  # 減少取樣頻率以節省訓練時間
   save_best: fid
-  save_every: 1000
+  save_every: 3600  # 每小時保存一次（原本16.7分鐘太頻繁，減少I/O開銷）
   take_model_average: true
 z_dist:
   dim: 256
