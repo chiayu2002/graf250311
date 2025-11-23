@@ -35,11 +35,14 @@ class Generator(object):
         self.initial_raw_noise_std = self.render_kwargs_train['raw_noise_std']
         self._parameters = parameters
         self._named_parameters = named_parameters
+        # 🔥 註冊coarse和fine網路以確保都被保存
         self.module_dict = {'generator': self.render_kwargs_train['network_fn']}
+        if self.render_kwargs_train.get('network_fine') is not None:
+            self.module_dict['generator_fine'] = self.render_kwargs_train['network_fine']
         
         for k, v in self.module_dict.items():
-            if k in ['generator']:
-                continue       # parameters already included
+            if k in ['generator', 'generator_fine']:
+                continue       # parameters already included in create_nerf
             self._parameters += list(v.parameters())
             self._named_parameters += list(v.named_parameters())
         
