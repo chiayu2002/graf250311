@@ -1,0 +1,72 @@
+expname: 4column250503_nerf9_medium_quality
+data:
+  datadir: [data/long/RS307, data/long/RS330]
+  far: 4.5
+  fov: 25
+  imsize: 192  # 🔥 提升至192（折衷方案）
+  near: 1.5
+  orthographic: False
+  use_default_rays : False
+  radius: 3.
+  type: RS307_0_i2
+  umax: 1.
+  umin: 0.
+  vmax: 0.5
+  vmin: 0.
+  v: 0.5, 0.4166667, 0.3333334, 0.25, 0.1666667
+
+discriminator:
+  num_classes: 2
+  hflip: false
+  ndf: 96  # 64→96 適度提升
+
+nerf:
+  N_samples: 80  # 64→80
+  N_importance: 64  # 🔥 啟用分層採樣（中等密度）
+  decrease_noise: true
+  i_embed: 0
+  multires: 10
+  multires_views: 5  # 4→5
+  netdepth: 9  # 8→9
+  netwidth: 384  # 256→384
+  perturb: 1.0
+  raw_noise_std: 1.0
+  use_viewdirs: true
+  netdepth_fine: 9
+  netwidth_fine: 384
+
+ray_sampler:
+  N_samples: 1536  # 1024→1536
+  max_scale: 1.0
+  min_scale: 0.25
+  scale_anneal: 0.0025
+
+training:
+  backup_every: 50000
+  batch_size: 12  # 適中的batch size
+  chunk: 24576
+  equalize_lr: false
+  fid_every: 5000
+  gan_type: standard
+  lr_anneal: 0.5
+  lr_anneal_every: 50000,100000,200000
+  lr_d: 0.00008
+  lr_g: 0.0004
+  model_average_beta: 0.999
+  model_average_reinit: false
+  model_file: model.pt
+  netchunk: 49152
+  nworkers: 4
+  optimizer: adam
+  outdir: ./results
+  print_every: 10
+  reg_param: 7.5  # 10→7.5
+  restart_every: -1
+  sample_every: 1000
+  save_best: fid
+  save_every: 3600
+  take_model_average: true
+
+z_dist:
+  dim: 256
+  type: gauss

@@ -1,0 +1,72 @@
+expname: 4column250503_nerf9_high_quality
+data:
+  datadir: [data/long/RS307, data/long/RS330]
+  far: 4.5
+  fov: 25
+  imsize: 256  # 🔥 提升至256以獲得更高清晰度
+  near: 1.5
+  orthographic: False
+  use_default_rays : False
+  radius: 3.
+  type: RS307_0_i2
+  umax: 1.
+  umin: 0.
+  vmax: 0.5
+  vmin: 0.
+  v: 0.5, 0.4166667, 0.3333334, 0.25, 0.1666667
+
+discriminator:
+  num_classes: 2
+  hflip: false
+  ndf: 128  # 🔥 64→128 提升判別器容量
+
+nerf:
+  N_samples: 96  # 🔥 64→96 增加粗略採樣
+  N_importance: 128  # 🔥 0→128 啟用分層採樣（關鍵！）
+  decrease_noise: true
+  i_embed: 0
+  multires: 10
+  multires_views: 6  # 🔥 4→6 提升視角細節
+  netdepth: 10  # 🔥 8→10 更深的網路
+  netwidth: 512  # 🔥 256→512 更寬的網路
+  perturb: 1.0
+  raw_noise_std: 1.0
+  use_viewdirs: true
+  netdepth_fine: 10  # 🔥 精細網路深度
+  netwidth_fine: 512  # 🔥 精細網路寬度
+
+ray_sampler:
+  N_samples: 2048  # 🔥 1024→2048 增加光線採樣
+  max_scale: 1.0
+  min_scale: 0.25
+  scale_anneal: 0.0025
+
+training:
+  backup_every: 50000
+  batch_size: 8  # 🔥 降低batch size因為解析度提高（若顯存足夠可用12）
+  chunk: 16384  # 🔥 降低chunk size以適應更高解析度
+  equalize_lr: false
+  fid_every: 5000
+  gan_type: standard
+  lr_anneal: 0.5
+  lr_anneal_every: 50000,100000,200000
+  lr_d: 0.00005  # 🔥 降低學習率以穩定訓練
+  lr_g: 0.00025  # 🔥 降低學習率以穩定訓練
+  model_average_beta: 0.999
+  model_average_reinit: false
+  model_file: model.pt
+  netchunk: 32768  # 🔥 降低netchunk
+  nworkers: 4
+  optimizer: adam
+  outdir: ./results
+  print_every: 10
+  reg_param: 5.0  # 🔥 10→5 降低正則化以保留細節
+  restart_every: -1
+  sample_every: 1000
+  save_best: fid
+  save_every: 3600
+  take_model_average: true
+
+z_dist:
+  dim: 256
+  type: gauss
